@@ -1,5 +1,7 @@
 import os
 import io 
+import sys
+import docx
 import tkinter as tk
 from graphviz import Digraph
 from PIL import Image, ImageTk, ImageDraw, ImageOps
@@ -19,6 +21,7 @@ class CodeEditorApp:
         self.current_dot_object = None 
         self.original_pil_image = None
         self.tree_image_photo = None 
+        self.tokens_list = None
 
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
@@ -45,6 +48,7 @@ class CodeEditorApp:
         self.create_editor_context_menu()
 
         self.apply_theme() 
+        self._update_export_menu_states()
         
         self.show_editor_view() 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close) 
@@ -66,13 +70,6 @@ class CodeEditorApp:
             command=self.show_editor_view
         )
         self.return_to_editor_btn.pack(side=tk.LEFT, padx=(0, 10))
-
-        self.export_menu_btn = ttk.Menubutton(tree_view_buttons_panel, text="Export Tree")
-        export_menu = Menu(self.export_menu_btn, tearoff=0)
-        export_menu.add_command(label="Export as PNG", command=self.export_tree_as_png)
-        export_menu.add_command(label="Export as PDF", command=self.export_tree_as_pdf)
-        self.export_menu_btn.config(menu=export_menu)
-        self.export_menu_btn.pack(side=tk.LEFT, padx=(0,10))
 
         self.tree_image_container_frame = ttk.Frame(self.tree_view_frame, relief=tk.SUNKEN, borderwidth=1)
         self.tree_image_container_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
@@ -114,7 +111,7 @@ class CodeEditorApp:
             self.root.title("TINY Language Editor - Parse Tree View")
             
             self.original_pil_image = Image.open(io.BytesIO(png_data))
-            self.original_pil_image = ImageOps.expand(self.original_pil_image, border=10, fill='white') # Added line
+            self.original_pil_image = ImageOps.expand(self.original_pil_image, border=10, fill='white')
             
             self.root.update_idletasks() 
             self._resize_and_display_tree_image()
@@ -162,7 +159,7 @@ class CodeEditorApp:
         try:
             resized_image = self.original_pil_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
         except AttributeError:
-             resized_image = self.original_pil_image.resize((new_width, new_height), Image.LANCZOS)
+            resized_image = self.original_pil_image.resize((new_width, new_height), Image.LANCZOS)
 
         self.tree_image_photo = ImageTk.PhotoImage(resized_image)
         
@@ -181,16 +178,87 @@ class CodeEditorApp:
         self.tree_image_photo = None
         self.original_pil_image = None 
         self.current_dot_object = None
+
+        if hasattr(self, 'docx_importer'):
+            del self.docx_importer
         self.root.destroy()
 
     def create_menu(self):
-        """Create the application menu with a theme toggle."""
+        """Create the application menu with a theme toggle and import options."""
         menubar = Menu(self.root)
         self.root.config(menu=menubar)
 
-        theme_menu = Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="View", menu=theme_menu)
-        theme_menu.add_command(label="Toggle Light/Dark Mode", command=self.toggle_theme)
+        file_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Import Code...", command=self.import_code_from_file)
+
+        view_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(label="Toggle Light/Dark Mode", command=self.toggle_theme)
+
+        self.export_main_menu = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Export", menu=self.export_main_menu)
+
+        self.export_tree_submenu = Menu(self.export_main_menu, tearoff=0)
+        self.export_main_menu.add_cascade(label="Export Tree", menu=self.export_tree_submenu)
+        self.export_tree_submenu.add_command(label="Export as PNG", command=self.export_tree_as_png)
+        self.export_tree_submenu.add_command(label="Export as PDF", command=self.export_tree_as_pdf)
+
+        self.export_tokens_submenu = Menu(self.export_main_menu, tearoff=0)
+        self.export_main_menu.add_cascade(label="Export Tokens List", menu=self.export_tokens_submenu)
+        self.export_tokens_submenu.add_command(label="Export as TXT", command=self.export_tokens_as_txt)
+        self.export_tokens_submenu.add_command(label="Export as CSV", command=self.export_tokens_as_csv)
+
+    def _update_export_menu_states(self):
+        """Update the state of export menu items based on available data."""
+        if not hasattr(self, 'export_main_menu'): 
+            return
+
+        token_export_state = tk.NORMAL if self.tokens_list else tk.DISABLED
+        try:
+            self.export_tokens_submenu.entryconfig("Export as TXT", state=token_export_state)
+            self.export_tokens_submenu.entryconfig("Export as CSV", state=token_export_state)
+            self.export_main_menu.entryconfig("Export Tokens List", state=token_export_state)
+        except tk.TclError: 
+            pass 
+
+        tree_export_state = tk.NORMAL if self.current_dot_object else tk.DISABLED
+        try:
+            self.export_tree_submenu.entryconfig("Export as PNG", state=tree_export_state)
+            self.export_tree_submenu.entryconfig("Export as PDF", state=tree_export_state)
+            self.export_main_menu.entryconfig("Export Tree", state=tree_export_state)
+        except tk.TclError:
+            pass 
+
+    def import_code_from_file(self):
+        """Open a file dialog to import code from .txt or .docx files."""
+        filepath = filedialog.askopenfilename(title="Import Code File", filetypes=[("Text files", "*.txt"), ("Word documents", "*.docx"), ("All files", "*.*")])
+        if not filepath:
+            return
+
+        try:
+            content = ""
+            if filepath.endswith(".txt"):
+                with open(filepath, "r", encoding="utf-8") as f:
+                    content = f.read()
+            elif filepath.endswith(".docx"):
+                doc = docx.Document(filepath)
+                full_text = []
+                for para in doc.paragraphs:
+                    full_text.append(para.text)
+                content = "\n".join(full_text) 
+            else:
+                messagebox.showwarning("Unsupported File", "Selected file type is not supported for import.")
+                return
+            
+            self.code_editor.delete(1.0, tk.END)
+            self.code_editor.insert(tk.END, content)
+            self.update_output(f"Successfully imported code from {os.path.basename(filepath)}", message_type="info")
+
+        except Exception as e:
+            messagebox.showerror("Import Error", f"Failed to import file: {e}")
+            self.update_output(f"Error importing file: {e}", message_type="error")
+
 
     def apply_theme(self):
         """Apply the current theme (light or dark) to the UI elements."""
@@ -208,6 +276,8 @@ class CodeEditorApp:
             insert_bg = "black"
             select_bg = "#add6ff" 
             tree_frame_bg = "#eeeeee" 
+            error_color = "red"
+            success_color = "green"
 
             self.root.configure(bg=bg_color)
             style.configure("TFrame", background=bg_color)
@@ -231,6 +301,8 @@ class CodeEditorApp:
             insert_bg = "white"
             select_bg = "#264f78"
             tree_frame_bg = "#2a2a2a"
+            error_color = "#FF6B6B"  
+            success_color = "#76FF03"
 
             self.root.configure(bg=bg_color)
             style.configure("TFrame", background=bg_color)
@@ -247,6 +319,9 @@ class CodeEditorApp:
             self.code_editor.config(bg=editor_bg, fg=editor_fg, insertbackground=insert_bg, selectbackground=select_bg)
         if hasattr(self, 'output_area'):
             self.output_area.config(bg=output_bg, fg=output_fg)
+            self.output_area.tag_configure("error", foreground=error_color)
+            self.output_area.tag_configure("success", foreground=success_color)
+            self.output_area.tag_configure("info", foreground=output_fg)
         if hasattr(self, 'output_label'): 
             self.output_label.config(background=bg_color, foreground=text_color)
         
@@ -259,8 +334,6 @@ class CodeEditorApp:
 
         if hasattr(self, 'return_to_editor_btn'):
             self.return_to_editor_btn.config(style="TButton")
-        if hasattr(self, 'export_menu_btn'):
-            self.export_menu_btn.config(style="TMenubutton")
 
 
     def toggle_theme(self):
@@ -305,7 +378,7 @@ class CodeEditorApp:
         )
 
         self.code_editor.grid(row=0, column=0, sticky="nsew")
-        self.code_editor.bind("<Button-3>", self.show_editor_context_menu) # Add this line
+        self.code_editor.bind("<Button-3>", self.show_editor_context_menu)
 
     def create_bottom_panel(self, parent_frame):
         """Create the bottom panel with action buttons within the given parent frame."""
@@ -354,14 +427,24 @@ class CodeEditorApp:
     def erase_content(self):
         """Clear the content of the code editor."""
         self.code_editor.delete(1.0, tk.END)
-        self.update_output("Editor content cleared.")
+        self.update_output("Editor content cleared.", message_type="info")
+        self.tokens_list = None
+        self._update_export_menu_states()
 
-    def update_output(self, text, clear=True):
-        """Update the output area with the given text."""
+    def update_output(self, text, clear=True, message_type="info"):
+        """Update the output area with the given text, applying color based on message_type."""
         self.output_area.config(state=tk.NORMAL)
         if clear:
             self.output_area.delete(1.0, tk.END)
-        self.output_area.insert(tk.END, str(text) + "\n")
+        
+        if message_type == "error" and not text.startswith("Error:"):
+            text_to_insert = f"Error: {text}"
+        elif message_type == "success" and not text.startswith("Success:"):
+            text_to_insert = f"Success: {text}"
+        else:
+            text_to_insert = str(text)
+
+        self.output_area.insert(tk.END, text_to_insert + "\n", message_type)
         self.output_area.config(state=tk.DISABLED)
         self.output_area.see(tk.END) 
 
@@ -372,37 +455,44 @@ class CodeEditorApp:
             messagebox.showwarning("Empty Code", "Please enter some code to parse.")
             return
 
-        self.update_output("Starting scanning and parsing process...") 
+        self.tokens_list = None
+        self.current_dot_object = None 
+        self._update_export_menu_states()
+
+        self.update_output("Starting scanning and parsing process...", message_type="info") 
         self.root.update_idletasks()
 
         try:
-            self.update_output("\nScanning code...", clear=False)
+            self.update_output("\nScanning code...", clear=False, message_type="info")
             self.root.update_idletasks() 
             tokens = tokenize(code)
             if not tokens:
-                self.update_output("No tokens found or scanner error.", clear=False)
+                self.update_output("No tokens found or scanner error.", clear=False, message_type="error")
                 self.root.update_idletasks() 
+                self._update_export_menu_states() 
                 return
             
-            self.update_output(f"Scanning complete. Found {len(tokens)} tokens.", clear=False)
+            self.tokens_list = tokens
+            self.update_output(f"Scanning complete. Found {len(tokens)} tokens.", clear=False, message_type="info")
             self.root.update_idletasks() 
-            self.update_output("List of tokens:", clear=False)
+            self.update_output("List of tokens:", clear=False, message_type="info")
             for value, token_type in tokens:
-                self.update_output(f"  {value} : {token_type}", clear=False)
+                self.update_output(f"  {value} : {token_type}", clear=False, message_type="info")
             self.root.update_idletasks() 
 
-            self.update_output("\nParsing tokens...", clear=False)
+            self.update_output("\nParsing tokens...", clear=False, message_type="info")
             self.root.update_idletasks() 
             token_stream = TokenStream(tokens)
             parse_tree_root = parse_program(token_stream)
-            self.update_output("Parsing complete.", clear=False)
+            self.update_output("Parsing complete.", clear=False, message_type="success")
             self.root.update_idletasks() 
             
             visualizer = TreeVisualizer() 
             self.current_dot_object = visualizer.render_tree(parse_tree_root) 
             
             if self.current_dot_object:
-                self.update_output("\\nParse tree generated. Switching to tree view...", clear=False)
+                self.update_output("Parse tree generated.", clear=False, message_type="success") 
+                self.update_output("Success! Redirecting to Tree View...", clear=False, message_type="success")
                 self.root.update_idletasks() 
                 
                 self.code_editor.delete(1.0, tk.END)
@@ -412,25 +502,29 @@ class CodeEditorApp:
                 
                 self.show_tree_view()
             else:
-                self.update_output("\nCould not generate parse tree graph.", clear=False)
+                self.update_output("Could not generate parse tree graph.", clear=False, message_type="error")
                 self.root.update_idletasks() 
-                messagebox.showerror("Parse Tree Error", "Failed to generate the parse tree graph.")
-
-        except RuntimeError as e:
-            self.update_output(f"\nScanner Error: {e}", clear=False)
+                # self.current_dot_object is already None or will be
+        except RuntimeError as e: 
+            self.update_output(f"Scanner Error: {e}", clear=False, message_type="error")
             self.root.update_idletasks() 
             messagebox.showerror("Scanner Error", str(e))
+            self.tokens_list = None # Ensure tokens_list is cleared on error
             self.current_dot_object = None
-        except SyntaxError as e:
-            self.update_output(f"\nParser Error: {e}", clear=False)
+        except SyntaxError as e: 
+            self.update_output(f"Parser Error: {e}", clear=False, message_type="error")
             self.root.update_idletasks() 
             messagebox.showerror("Parser Error", str(e))
+            self.tokens_list = None # Ensure tokens_list is cleared on error
             self.current_dot_object = None 
         except Exception as e:
-            self.update_output(f"\nAn unexpected error occurred: {e}", clear=False)
+            self.update_output(f"An unexpected error occurred: {e}", clear=False, message_type="error")
             self.root.update_idletasks() 
             messagebox.showerror("Error", f"An unexpected error occurred: {e}")
+            self.tokens_list = None # Ensure tokens_list is cleared on error
             self.current_dot_object = None
+        finally:
+            self._update_export_menu_states() # Update menu states after all outcomes
 
     def export_tree_as_png(self):
         """Export the current parse tree as a PNG file."""
@@ -471,6 +565,60 @@ class CodeEditorApp:
             messagebox.showinfo("Export Successful", f"Parse tree saved as {filepath}")
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to export as PDF: {e}")
+
+    def export_tokens_as_txt(self):
+        """Export the current tokens list as a TXT file."""
+        if not self.tokens_list:
+            messagebox.showinfo("Export Error", "No tokens available to export. Please parse some code first.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            title="Save Tokens List as TXT"
+        )
+        if not filepath:
+            return
+
+        try:
+            content = []
+            for value, token_type in self.tokens_list:
+                content.append(f"{value} : {token_type}")
+            
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write("\\n".join(content))
+            messagebox.showinfo("Export Successful", f"Tokens list saved as {filepath}")
+            self.update_output(f"Successfully exported tokens to {os.path.basename(filepath)}", message_type="info")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export tokens as TXT: {e}")
+            self.update_output(f"Error exporting tokens as TXT: {e}", message_type="error")
+
+    def export_tokens_as_csv(self):
+        """Export the current tokens list as a CSV file."""
+        if not self.tokens_list:
+            messagebox.showinfo("Export Error", "No tokens available to export. Please parse some code first.")
+            return
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Save Tokens List as CSV"
+        )
+        if not filepath:
+            return
+
+        try:
+            import csv # Standard library
+            with open(filepath, "w", encoding="utf-8", newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Value", "Type"]) # Header row
+                for value, token_type in self.tokens_list:
+                    writer.writerow([value, token_type])
+            messagebox.showinfo("Export Successful", f"Tokens list saved as {filepath}")
+            self.update_output(f"Successfully exported tokens to {os.path.basename(filepath)}", message_type="info")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export tokens as CSV: {e}")
+            self.update_output(f"Error exporting tokens as CSV: {e}", message_type="error")
 
 def main():
     """Main function to start the application."""

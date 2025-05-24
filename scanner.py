@@ -17,9 +17,9 @@ token_specification = [
     ('NUMBER',   r'\d+'),
     ('ASSIGN',   r':='),
     ('SYMBOL',   r'[;+\-*/=<>()]'),
-    ('ID',       r'[A-Za-z_][A-Za-z0-9_]*'),
+    ('ID',       r'[A-Za-z_][A-Za-z0-9_]*'),    
     ('NEWLINE',  r'\n'),
-    ('SKIP',     r'[ \t]+'),
+    ('SKIP',     r'[\s\u00A0]+'), 
     ('MISMATCH', r'.')
 ]
 
@@ -42,9 +42,10 @@ def tokenize(code):
             if token_type:
                 tokens.append((value, token_type))
         elif kind in ('SKIP', 'NEWLINE'):
-            continue
+            continue        
         elif kind == 'MISMATCH':
-            raise RuntimeError(f'Unexpected character: {value}')
+            char_code = f"(ASCII: {ord(value)})" if len(value) == 1 else ""
+            raise RuntimeError(f'Unexpected character: "{value}" {char_code}')
     return tokens
 
 def main():

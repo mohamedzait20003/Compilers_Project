@@ -41,7 +41,12 @@ def parse_stmt_sequence(ts):
     node.add(parse_statement(ts))
     while ts.current() and ts.current()[1] == "SEMICOLON":
         ts.match("SEMICOLON")
-        node.add(parse_statement(ts))
+
+        
+        if ts.current() and ts.current()[1] in {"IF", "REPEAT", "IDENTIFIER", "READ", "WRITE"}:
+            node.add(parse_statement(ts))
+        else:
+            break  
     return node
 
 def parse_statement(ts):

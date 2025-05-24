@@ -1,6 +1,7 @@
 import os
 import io 
 import sys
+import csv
 import docx
 import tkinter as tk
 from graphviz import Digraph
@@ -605,10 +606,9 @@ class CodeEditorApp:
             title="Save Tokens List as CSV"
         )
         if not filepath:
-            return
-
+            return        
+        
         try:
-            import csv # Standard library
             with open(filepath, "w", encoding="utf-8", newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(["Value", "Type"]) # Header row

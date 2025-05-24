@@ -587,7 +587,7 @@ class CodeEditorApp:
                 content.append(f"{value} : {token_type}")
             
             with open(filepath, "w", encoding="utf-8") as f:
-                f.write("\\n".join(content))
+                f.write("\n".join(content))
             messagebox.showinfo("Export Successful", f"Tokens list saved as {filepath}")
             self.update_output(f"Successfully exported tokens to {os.path.basename(filepath)}", message_type="info")
         except Exception as e:
@@ -611,7 +611,7 @@ class CodeEditorApp:
         try:
             with open(filepath, "w", encoding="utf-8", newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["Value", "Type"]) # Header row
+                writer.writerow(["Value", "Type"]) 
                 for value, token_type in self.tokens_list:
                     writer.writerow([value, token_type])
             messagebox.showinfo("Export Successful", f"Tokens list saved as {filepath}")

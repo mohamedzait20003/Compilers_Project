@@ -46,7 +46,6 @@ class CodeEditorApp:
         self.setup_editor_view_widgets()
         self.setup_tree_view_widgets()
         self.create_editor_context_menu()
-        self.create_output_context_menu()
 
         self.apply_theme() 
         self._update_export_menu_states()
@@ -359,35 +358,6 @@ class CodeEditorApp:
         finally:
             self.editor_context_menu.grab_release()
 
-    def create_output_context_menu(self):
-        """Create a context menu for the output area."""
-        self.output_context_menu = Menu(self.root, tearoff=0)
-        self.output_context_menu.add_command(label="Copy", command=self.copy_output_selection)
-        self.output_context_menu.add_command(label="Copy All", command=self.copy_all_output)
-
-    def show_output_context_menu(self, event):
-        """Display the output context menu at the cursor position."""
-        try:
-            self.output_context_menu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.output_context_menu.grab_release()
-
-    def copy_output_selection(self):
-        """Copy selected text from the output area to the clipboard."""
-        try:
-            selected_text = self.output_area.get(tk.SEL_FIRST, tk.SEL_LAST)
-            self.root.clipboard_clear()
-            self.root.clipboard_append(selected_text)
-        except tk.TclError:
-            # No selection
-            pass
-
-    def copy_all_output(self):
-        """Copy all text from the output area to the clipboard."""
-        all_text = self.output_area.get(1.0, tk.END)
-        self.root.clipboard_clear()
-        self.root.clipboard_append(all_text)
-
     def create_code_editor(self, parent_frame):
         """Create the main code editing area within the given parent frame."""
         editor_frame = ttk.Frame(parent_frame) 
@@ -453,7 +423,6 @@ class CodeEditorApp:
         )
         self.output_area.grid(row=1, column=0, sticky="nsew")
         self.output_area.config(state=tk.DISABLED)
-        self.output_area.bind("<Button-3>", self.show_output_context_menu)
 
     def erase_content(self):
         """Clear the content of the code editor."""
